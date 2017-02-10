@@ -34,7 +34,7 @@ On premises agent to block and unblock users on the Active Directory based on mi
 </ul>
 <li><strong>SkillsWorkflow</strong>
 <ul>
-<li><strong>Skills:ApiUrl</strong> - SkillsWorkflow Api base url. It depends on the Environment and Tenant being used. It has the following scructure http://api-tenant-environment-we.skillsworkflow.com. Use the name of the company provided to you for the parameter "tenant". For "environment" use "prod", "test" or "dev" for one of Skills Workflow's Environments: Production, Testing, Development.</li>
+<li><strong>Skills:ApiUrl</strong> - SkillsWorkflow Api base url. It depends on the Environment and Tenant being used. It has the following scructure https://api-tenant-environment-we.skillsworkflow.com. Use the name of the company provided to you for the parameter "tenant". For "environment" use "prod", "test" or "dev" for one of Skills Workflow's Environments: Production, Testing, Development.</li>
 <li><strong>Skills:AppId</strong> - SkillsWorkflow Tenant application id. This id must be requested to SkillsWorkflow team. It will be used to ensure comunication with SkillsWorkflow api.</li>
 <li><strong>Skills:AppSecret</strong> - SkillsWorkflow Tenant application secret. It is used with Tenant application id.</li>
 <li><strong>Skills:SSLPublicKey</strong> - SkillsWorkflow SSL certificate public key. It is used to validate requests to SkillsWorkflow Api. This key must be requested to SkillsWorkflow team.</li>
