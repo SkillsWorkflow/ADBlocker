@@ -49,14 +49,7 @@ namespace SkillsWorkflow.Services.ADBlocker
             InitializeHttpClient();
             try
             {
-                var response = await _client.GetAsync("api/blockedloginrequests/config");
-                response.EnsureSuccessStatusCode();
-                var responseContent = await response.Content.ReadAsStringAsync();
-                var taskConfig = JsonConvert.DeserializeObject<TaskConfiguration>(responseContent);
-                if (taskConfig == null)
-                    return;
-                if (MustRunDailyTask(taskConfig))
-                    await RunDailyTaskAsync();
+                await RunBlockingTaskAsync();
                 await RunScheduledTaskAsync();
                 await UpdateTaskRuntimeAsync();
             }
@@ -92,32 +85,22 @@ namespace SkillsWorkflow.Services.ADBlocker
             _client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         }
 
-        private static bool MustRunDailyTask(TaskConfiguration taskConfiguration)
-        {
-            if (!taskConfiguration.ShouldLockDomainUser) return false;
-            if (taskConfiguration.DailyTaskRunnedAt == DateTime.MinValue) return true;
-            var alertTime = taskConfiguration.DailyAlertTime;
-            var dateNow = DateTime.UtcNow;
-            var alertOn = new DateTime(dateNow.Year, dateNow.Month, dateNow.Day, alertTime.Hours, alertTime.Minutes, 0);
-            return alertOn > taskConfiguration.DailyTaskRunnedAt && dateNow > alertOn;
-        }
-
         private static async Task UpdateTaskRuntimeAsync()
         {
             var response = await _client.PostAsync("api/blockedloginrequests/taskruntime", new StringContent(""));
             response.EnsureSuccessStatusCode();
         }
 
-        private static async Task RunDailyTaskAsync()
+        private static async Task RunBlockingTaskAsync()
         {
-            Trace.WriteLine($"Started running daily task: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}", "ADBlocker");
+            Trace.WriteLine($"Started running blocking task: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}", "ADBlocker");
             var response = await _client.GetAsync("api/blockedloginrequests/userstoblock");
             response.EnsureSuccessStatusCode();
             var responseContent = await response.Content.ReadAsStringAsync();
             var usersToBlock = JsonConvert.DeserializeObject<List<User>>(responseContent);
             foreach (var user in usersToBlock)
                 await BlockUserAsync(user);
-            Trace.WriteLine($"Ended running daily task: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}", "ADBlocker");
+            Trace.WriteLine($"Ended running blocking task: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}", "ADBlocker");
         }
 
         private static async Task RunScheduledTaskAsync()
@@ -227,7 +210,7 @@ namespace SkillsWorkflow.Services.ADBlocker
                     userPrincipal.Save();
                 }
             }
-            
+            Trace.WriteLine($"Blocked User {user.AdUserName}", "ADBlocker");
             return true;
         }
 
