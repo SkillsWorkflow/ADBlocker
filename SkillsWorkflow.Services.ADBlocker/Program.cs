@@ -176,10 +176,15 @@ namespace SkillsWorkflow.Services.ADBlocker
                     userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(1);
                     userPrincipal.Save();
 
-                    valid = context.ValidateCredentials(blockedLoginRequest.AdUserName, blockedLoginRequest.Password);
-
+                    Trace.WriteLine($"User {blockedLoginRequest.AdUserName} unblocked", "ADBlocker");
+                    var entries = blockedLoginRequest.AdUserName.Split(new [] {"\\" }, StringSplitOptions.RemoveEmptyEntries);
+                    var user = entries.Length == 2 ? entries[1] : entries[0];
+                    valid = context.ValidateCredentials(user, blockedLoginRequest.Password);
+                    Trace.WriteLine($"UserName: {blockedLoginRequest.AdUserName} ", "ADBlocker");
+                    
                     userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(-1);
                     userPrincipal.Save();
+                    Trace.WriteLine($"User {blockedLoginRequest.AdUserName} blocked", "ADBlocker");
                 }
             }
 
