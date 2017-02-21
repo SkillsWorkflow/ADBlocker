@@ -148,6 +148,7 @@ namespace SkillsWorkflow.Services.ADBlocker
                         userPrincipal.AccountExpirationDate = unblockUserRequest.AccountExpirationDate;
                         userPrincipal.Save();
                         result = new UnblockUserRequestResult { Id = unblockUserRequest.Id, RequestResult = true, RequestResultMessage = "" };
+                        Trace.WriteLine($"Unblocked User {unblockUserRequest.AdUserName}", "ADBlocker");
                     }
                 }
             }
