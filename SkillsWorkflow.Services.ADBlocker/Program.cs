@@ -145,7 +145,14 @@ namespace SkillsWorkflow.Services.ADBlocker
                         result = new UnblockUserRequestResult { Id = unblockUserRequest.Id, RequestResult = false, RequestResultMessage = "AD User not found." };
                     else
                     {
-                        userPrincipal.AccountExpirationDate = unblockUserRequest.AccountExpirationDate;
+                        if (userPrincipal.AccountExpirationDate.HasValue &&
+                                userPrincipal.AccountExpirationDate.Value < DateTime.UtcNow)
+                        {
+                            if (!unblockUserRequest.AccountExpirationDate.HasValue || (unblockUserRequest.AccountExpirationDate.Value > DateTime.UtcNow))
+                                userPrincipal.AccountExpirationDate = unblockUserRequest.AccountExpirationDate;
+                            else
+                                userPrincipal.AccountExpirationDate = null;
+                        }
                         userPrincipal.Save();
                         result = new UnblockUserRequestResult { Id = unblockUserRequest.Id, RequestResult = true, RequestResultMessage = "" };
                         Trace.WriteLine($"Unblocked User {unblockUserRequest.AdUserName}", "ADBlocker");
