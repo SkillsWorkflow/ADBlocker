@@ -46,9 +46,9 @@ namespace SkillsWorkflow.Services.ADBlocker
         {
             Trace.WriteLine("Start task", "ADBlocker");
             Trace.WriteLine($"Start Time: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}", "ADBlocker");
-            InitializeHttpClient();
             try
             {
+                InitializeHttpClient();
                 await RunBlockingTaskAsync();
                 await RunScheduledTaskAsync();
                 await UpdateTaskRuntimeAsync();
