@@ -206,6 +206,12 @@ namespace SkillsWorkflow.Services.ADBlocker
                 {
                     if (userPrincipal == null)
                         return false;
+                    if (userPrincipal.AccountExpirationDate.HasValue &&
+                        userPrincipal.AccountExpirationDate.Value < DateTime.UtcNow)
+                    {
+                        Trace.WriteLine($"User {user.AdUserName} is already blocked and was not processed again.", "ADBlocker");
+                        return false;
+                    }
                     var adLockExpirationDate = userPrincipal.AccountExpirationDate;
 
                     HttpContent postContent = new StringContent(JsonConvert.SerializeObject(new UserToBlock { Oid = user.Oid, AccountExpirationDate = adLockExpirationDate }), Encoding.UTF8, "application/json");
