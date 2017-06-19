@@ -180,8 +180,13 @@ namespace SkillsWorkflow.Services.ADBlocker
                     if (userPrincipal == null)
                         return new BlockedLoginRequestResult {Id = blockedLoginRequest.Id, RequestResult = false, RequestResultMessage = "AD User not found."};
 
-                    userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(1);
-                    userPrincipal.Save();
+                    DateTime? accountExpirationDate = userPrincipal.AccountExpirationDate;
+
+                    if (accountExpirationDate.HasValue && accountExpirationDate.Value < DateTime.UtcNow)
+                    {
+                        userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(1);
+                        userPrincipal.Save();
+                    }
 
                     Trace.WriteLine($"User {blockedLoginRequest.AdUserName} unblocked", "ADBlocker");
                     var entries = blockedLoginRequest.AdUserName.Split(new [] {"\\" }, StringSplitOptions.RemoveEmptyEntries);
@@ -189,7 +194,7 @@ namespace SkillsWorkflow.Services.ADBlocker
                     valid = context.ValidateCredentials(user, blockedLoginRequest.Password);
                     Trace.WriteLine($"UserName: {blockedLoginRequest.AdUserName} ", "ADBlocker");
                     
-                    userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(-1);
+                    userPrincipal.AccountExpirationDate = accountExpirationDate;
                     userPrincipal.Save();
                     Trace.WriteLine($"User {blockedLoginRequest.AdUserName} blocked", "ADBlocker");
                 }
