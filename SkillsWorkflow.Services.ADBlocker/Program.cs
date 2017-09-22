@@ -37,6 +37,13 @@ namespace SkillsWorkflow.Services.ADBlocker
             RaygunClient.SendingMessage += (sender, eventArgs) => { eventArgs.Message.Details.Tags = raygunTags; };
         }
 
+        private static void ProcessException(Exception ex)
+        {
+            Trace.WriteLine("ERROR", "ADBlocker");
+            ex.TraceError();
+            RaygunClient.Send(ex);
+        }
+
         private static void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
         {
             RaygunClient.Send(e.ExceptionObject as Exception);
@@ -55,9 +62,7 @@ namespace SkillsWorkflow.Services.ADBlocker
             }
             catch (Exception ex)
             {
-                Trace.WriteLine("ERROR", "ADBlocker");
-                ex.TraceError();
-                RaygunClient.Send(ex);
+                ProcessException(ex);
             }
             finally
             {
@@ -93,14 +98,24 @@ namespace SkillsWorkflow.Services.ADBlocker
 
         private static async Task RunBlockingTaskAsync()
         {
-            Trace.WriteLine($"Started running blocking task: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}", "ADBlocker");
-            var response = await _client.GetAsync("api/blockedloginrequests/userstoblock");
-            response.EnsureSuccessStatusCode();
-            var responseContent = await response.Content.ReadAsStringAsync();
-            var usersToBlock = JsonConvert.DeserializeObject<List<User>>(responseContent);
-            foreach (var user in usersToBlock)
-                await BlockUserAsync(user);
-            Trace.WriteLine($"Ended running blocking task: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}", "ADBlocker");
+            try
+            {
+                Trace.WriteLine($"Started running blocking task: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}",
+                    "ADBlocker");
+                var response = await _client.GetAsync("api/blockedloginrequests/userstoblock");
+                response.EnsureSuccessStatusCode();
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var usersToBlock = JsonConvert.DeserializeObject<List<User>>(responseContent);
+                foreach (var user in usersToBlock)
+                    await BlockUserAsync(user);
+                Trace.WriteLine($"Ended running blocking task: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}",
+                    "ADBlocker");
+            }
+            catch (Exception ex)
+            {
+                ProcessException(ex);
+            }
+            
         }
 
         private static async Task RunScheduledTaskAsync()
@@ -115,23 +130,37 @@ namespace SkillsWorkflow.Services.ADBlocker
 
         private static async Task ProcessBlockedLoginRequestsAsync()
         {
-            var response = await _client.GetAsync("api/blockedloginrequests");
-            response.EnsureSuccessStatusCode();
-            var resp = await response.Content.ReadAsStringAsync();
-            var blockedLoginRequests = JsonConvert.DeserializeObject<List<BlockedLoginRequest>>(resp);
+            try
+            {
+                var response = await _client.GetAsync("api/blockedloginrequests");
+                response.EnsureSuccessStatusCode();
+                var resp = await response.Content.ReadAsStringAsync();
+                var blockedLoginRequests = JsonConvert.DeserializeObject<List<BlockedLoginRequest>>(resp);
 
-            foreach (var blockedLoginRequest in blockedLoginRequests)
-                await UpdateBlockedLoginRequestAsync(ValidateLoginRequest(blockedLoginRequest));
+                foreach (var blockedLoginRequest in blockedLoginRequests)
+                    await UpdateBlockedLoginRequestAsync(ValidateLoginRequest(blockedLoginRequest));
+            }
+            catch (Exception ex)
+            {
+                ProcessException(ex);
+            }
         }
 
         private static async Task ProcessUnblockUserRequestsAsync()
         {
-            var response = await _client.GetAsync("api/unblockuserrequests");
-            response.EnsureSuccessStatusCode();
-            var responseContent = await response.Content.ReadAsStringAsync();
-            var unblockUserRequests = JsonConvert.DeserializeObject<List<UnblockUserRequest>>(responseContent);
-            foreach (var unblockUserRequest in unblockUserRequests)
-                await ProcessUnblockUserRequestAsync(unblockUserRequest);
+            try
+            {
+                var response = await _client.GetAsync("api/unblockuserrequests");
+                response.EnsureSuccessStatusCode();
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var unblockUserRequests = JsonConvert.DeserializeObject<List<UnblockUserRequest>>(responseContent);
+                foreach (var unblockUserRequest in unblockUserRequests)
+                    await ProcessUnblockUserRequestAsync(unblockUserRequest);
+            }
+            catch (Exception ex)
+            {
+                ProcessException(ex);
+            }
         }
 
         private static async Task ProcessUnblockUserRequestAsync(UnblockUserRequest unblockUserRequest)
