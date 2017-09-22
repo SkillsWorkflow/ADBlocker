@@ -225,13 +225,13 @@ namespace SkillsWorkflow.Services.ADBlocker
                         return false;
                     }
                     var adLockExpirationDate = userPrincipal.AccountExpirationDate;
+                    
+                    userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(-1);
+                    userPrincipal.Save();
 
                     HttpContent postContent = new StringContent(JsonConvert.SerializeObject(new UserToBlock { Oid = user.Oid, AccountExpirationDate = adLockExpirationDate }), Encoding.UTF8, "application/json");
                     var response = await _client.PostAsync("api/blockedloginrequests/block", postContent);
                     response.EnsureSuccessStatusCode();
-
-                    userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(-1);
-                    userPrincipal.Save();
                 }
             }
             Trace.WriteLine($"Blocked User {user.AdUserName}", "ADBlocker");
