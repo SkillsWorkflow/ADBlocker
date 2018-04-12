@@ -207,8 +207,11 @@ namespace SkillsWorkflow.Services.ADBlocker
                 using (UserPrincipal userPrincipal = UserPrincipal.FindByIdentity(context, blockedLoginRequest.AdUserName))
                 {
                     if (userPrincipal == null)
-                        return new BlockedLoginRequestResult {Id = blockedLoginRequest.Id, RequestResult = false, RequestResultMessage = "AD User not found."};
-
+                    {
+                        Trace.WriteLine($"User {blockedLoginRequest.AdUserName} not found in AD.", "ADBlocker");
+                        return new BlockedLoginRequestResult { Id = blockedLoginRequest.Id, RequestResult = false, RequestResultMessage = "AD User not found." };
+                    }
+                    
                     DateTime? accountExpirationDate = userPrincipal.AccountExpirationDate;
 
                     if (accountExpirationDate.HasValue && accountExpirationDate.Value < DateTime.UtcNow)
@@ -246,7 +249,11 @@ namespace SkillsWorkflow.Services.ADBlocker
                 using (UserPrincipal userPrincipal = UserPrincipal.FindByIdentity(context, user.AdUserName))
                 {
                     if (userPrincipal == null)
+                    {
+                        Trace.WriteLine($"User {user.AdUserName} not found in AD.", "ADBlocker");
                         return false;
+                    }
+                        
                     if (userPrincipal.AccountExpirationDate.HasValue &&
                         userPrincipal.AccountExpirationDate.Value < DateTime.UtcNow)
                     {
