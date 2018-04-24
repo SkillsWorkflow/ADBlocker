@@ -258,6 +258,7 @@ namespace SkillsWorkflow.Services.ADBlocker
                         userPrincipal.AccountExpirationDate.Value < DateTime.UtcNow)
                     {
                         Trace.WriteLine($"User {user.AdUserName} is already blocked and was not processed again.", "ADBlocker");
+                        await UpdateBlockStatus(user, null);
                         return false;
                     }
                     var adLockExpirationDate = userPrincipal.AccountExpirationDate;
@@ -265,12 +266,18 @@ namespace SkillsWorkflow.Services.ADBlocker
                     userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(-1);
                     userPrincipal.Save();
 
-                    HttpContent postContent = new StringContent(JsonConvert.SerializeObject(new UserToBlock { Oid = user.Oid, AccountExpirationDate = adLockExpirationDate }), Encoding.UTF8, "application/json");
-                    var response = await _client.PostAsync("api/blockedloginrequests/block", postContent);
-                    response.EnsureSuccessStatusCode();
+                    await UpdateBlockStatus(user, adLockExpirationDate);
                 }
             }
             Trace.WriteLine($"Blocked User {user.AdUserName}", "ADBlocker");
+            return true;
+        }
+
+        private static async Task<bool> UpdateBlockStatus(User user, DateTime? adLockExpirationDate)
+        {
+            HttpContent postContent = new StringContent(JsonConvert.SerializeObject(new UserToBlock { Oid = user.Oid, AccountExpirationDate = adLockExpirationDate }), Encoding.UTF8, "application/json");
+            var response = await _client.PostAsync("api/blockedloginrequests/block", postContent);
+            response.EnsureSuccessStatusCode();
             return true;
         }
 
