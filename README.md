@@ -4,7 +4,7 @@ On premises agent to block and unblock users on the Active Directory based on mi
 
 <h3>Framework/Tools/Dependencies</h3>
 <ul>
-<li>.NET Framework 4.5.2</li>
+<li>.NET Framework 4.6.2</li>
 <li>Visual Studio 2015 or later</li>
 </ul>
 
