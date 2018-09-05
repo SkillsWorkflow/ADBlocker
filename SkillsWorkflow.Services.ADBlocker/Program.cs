@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Configuration;
 using System.Diagnostics;
+using System.DirectoryServices;
 using System.DirectoryServices.AccountManagement;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -174,20 +175,45 @@ namespace SkillsWorkflow.Services.ADBlocker
                         result = new UnblockUserRequestResult { Id = unblockUserRequest.Id, RequestResult = false, RequestResultMessage = "AD User not found." };
                     else
                     {
-                        if (userPrincipal.AccountExpirationDate.HasValue &&
-                                userPrincipal.AccountExpirationDate.Value < DateTime.UtcNow)
+                        string updateField = ConfigurationManager.AppSettings["AD:UpdateField"];
+                        if (string.IsNullOrWhiteSpace(updateField))
                         {
-                            if (!unblockUserRequest.AccountExpirationDate.HasValue || (unblockUserRequest.AccountExpirationDate.Value > DateTime.UtcNow))
-                                userPrincipal.AccountExpirationDate = unblockUserRequest.AccountExpirationDate;
-                            else
-                                userPrincipal.AccountExpirationDate = null;
+                            if (userPrincipal.AccountExpirationDate.HasValue &&
+                                userPrincipal.AccountExpirationDate.Value < DateTime.UtcNow)
+                            {
+                                if (!unblockUserRequest.AccountExpirationDate.HasValue || (unblockUserRequest.AccountExpirationDate.Value > DateTime.UtcNow))
+                                    userPrincipal.AccountExpirationDate = unblockUserRequest.AccountExpirationDate;
+                                else
+                                    userPrincipal.AccountExpirationDate = null;
+                            }
                         }
+                        else
+                        {
+                            var entry = userPrincipal.GetUnderlyingObject() as DirectoryEntry;
+                            if (entry != null && entry.Properties.Contains(updateField))
+                                entry.Properties[updateField].Value = ConfigurationManager.AppSettings["AD:UpdateFieldEnableValue"];
+                            else
+                            {
+                                Trace.WriteLine($"Unblocked User {unblockUserRequest.AdUserName} failed. The defined update field is invalid.", "ADBlocker");
+                                result = new UnblockUserRequestResult { Id = unblockUserRequest.Id, RequestResult = false,
+                                    RequestResultMessage = "Operation failed. The defined update field is invalid." };
+                                await UpdateUnblockRequest(result);
+                                return;
+                            }
+                                
+                        }
+  
                         userPrincipal.Save();
                         result = new UnblockUserRequestResult { Id = unblockUserRequest.Id, RequestResult = true, RequestResultMessage = "" };
                         Trace.WriteLine($"Unblocked User {unblockUserRequest.AdUserName}", "ADBlocker");
                     }
                 }
             }
+            await UpdateUnblockRequest(result);
+        }
+
+        private static async Task UpdateUnblockRequest(UnblockUserRequestResult result)
+        {
             HttpContent putContent = new StringContent(JsonConvert.SerializeObject(result), Encoding.UTF8, "application/json");
             var response = await _client.PutAsync("api/unblockuserrequests", putContent);
             response.EnsureSuccessStatusCode();
@@ -202,6 +228,12 @@ namespace SkillsWorkflow.Services.ADBlocker
         private static BlockedLoginRequestResult ValidateLoginRequest(BlockedLoginRequest blockedLoginRequest)
         {
             bool valid;
+
+            string updateField = ConfigurationManager.AppSettings["AD:UpdateField"];
+            if(!string.IsNullOrWhiteSpace(updateField))
+                return new BlockedLoginRequestResult { Id = blockedLoginRequest.Id, RequestResult = false,
+                    RequestResultMessage = "An update field is used in ADBlocker preventing credentials from being validated." };
+
             using (var context = CreatePrincipalContext())
             {
                 using (UserPrincipal userPrincipal = UserPrincipal.FindByIdentity(context, blockedLoginRequest.AdUserName))
@@ -253,17 +285,33 @@ namespace SkillsWorkflow.Services.ADBlocker
                         Trace.WriteLine($"User {user.AdUserName} not found in AD.", "ADBlocker");
                         return false;
                     }
-                        
-                    if (userPrincipal.AccountExpirationDate.HasValue &&
-                        userPrincipal.AccountExpirationDate.Value < DateTime.UtcNow)
+
+                    DateTime? adLockExpirationDate = null;
+                    string updateField = ConfigurationManager.AppSettings["AD:UpdateField"];
+                    if (string.IsNullOrWhiteSpace(updateField))
                     {
-                        Trace.WriteLine($"User {user.AdUserName} is already blocked and was not processed again.", "ADBlocker");
-                        await UpdateBlockStatus(user, null);
-                        return false;
+                        if (userPrincipal.AccountExpirationDate.HasValue &&
+                        userPrincipal.AccountExpirationDate.Value < DateTime.UtcNow)
+                        {
+                            Trace.WriteLine($"User {user.AdUserName} is already blocked and was not processed again.", "ADBlocker");
+                            await UpdateBlockStatus(user, null);
+                            return false;
+                        }
+                        adLockExpirationDate = userPrincipal.AccountExpirationDate;
+                        userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(-1);
                     }
-                    var adLockExpirationDate = userPrincipal.AccountExpirationDate;
+                    else
+                    {
+                        var entry = userPrincipal.GetUnderlyingObject() as DirectoryEntry;
+                        if (entry != null && entry.Properties.Contains(updateField))
+                            entry.Properties[updateField].Value = ConfigurationManager.AppSettings["AD:UpdateFieldDisableValue"];
+                        else
+                        {
+                            Trace.WriteLine($"User {user.AdUserName} was not processed. The update field is invalid.", "ADBlocker");
+                            return false;
+                        }
+                    }
                     
-                    userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(-1);
                     userPrincipal.Save();
 
                     await UpdateBlockStatus(user, adLockExpirationDate);
