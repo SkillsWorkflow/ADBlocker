@@ -190,13 +190,16 @@ namespace SkillsWorkflow.Services.ADBlocker
                         else
                         {
                             var entry = userPrincipal.GetUnderlyingObject() as DirectoryEntry;
-                            if (entry != null && entry.Properties.Contains(updateField))
-                                entry.Properties[updateField].Value = ConfigurationManager.AppSettings["AD:UpdateFieldEnableValue"];
+                            if (entry != null)
+                            {
+                                entry.Properties[updateField].Clear();
+                                entry.Properties[updateField].Add(ConfigurationManager.AppSettings["AD:UpdateFieldEnableValue"]);
+                            }
                             else
                             {
-                                Trace.WriteLine($"Unblocked User {unblockUserRequest.AdUserName} failed. The defined update field is invalid.", "ADBlocker");
+                                Trace.WriteLine($"Unblocked User {unblockUserRequest.AdUserName} failed. The defined update field is invalid or the user entry could not be loaded.", "ADBlocker");
                                 result = new UnblockUserRequestResult { Id = unblockUserRequest.Id, RequestResult = false,
-                                    RequestResultMessage = "Operation failed. The defined update field is invalid." };
+                                    RequestResultMessage = "Operation failed. The defined update field is invalid or the user entry could not be loaded." };
                                 await UpdateUnblockRequest(result);
                                 return;
                             }
@@ -303,11 +306,14 @@ namespace SkillsWorkflow.Services.ADBlocker
                     else
                     {
                         var entry = userPrincipal.GetUnderlyingObject() as DirectoryEntry;
-                        if (entry != null && entry.Properties.Contains(updateField))
-                            entry.Properties[updateField].Value = ConfigurationManager.AppSettings["AD:UpdateFieldDisableValue"];
+                        if (entry != null)
+                        {
+                            entry.Properties[updateField].Clear();
+                            entry.Properties[updateField].Add(ConfigurationManager.AppSettings["AD:UpdateFieldDisableValue"]);
+                        }
                         else
                         {
-                            Trace.WriteLine($"User {user.AdUserName} was not processed. The update field is invalid.", "ADBlocker");
+                            Trace.WriteLine($"User {user.AdUserName} was not processed. The update field is invalid or the user entry could not be loaded.", "ADBlocker");
                             return false;
                         }
                     }
