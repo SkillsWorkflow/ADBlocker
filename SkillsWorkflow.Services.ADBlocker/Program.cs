@@ -192,8 +192,9 @@ namespace SkillsWorkflow.Services.ADBlocker
                             var entry = userPrincipal.GetUnderlyingObject() as DirectoryEntry;
                             if (entry != null)
                             {
+                                var value = GetValueForFieldUpdate(entry.Properties[updateField], ConfigurationManager.AppSettings["AD:UpdateFieldEnableValue"]);
                                 entry.Properties[updateField].Clear();
-                                entry.Properties[updateField].Add(GetValueForFieldUpdate(entry.Properties[updateField], ConfigurationManager.AppSettings["AD:UpdateFieldEnableValue"]));
+                                entry.Properties[updateField].Add(value);
                             }
                             else
                             {
@@ -308,8 +309,9 @@ namespace SkillsWorkflow.Services.ADBlocker
                         var entry = userPrincipal.GetUnderlyingObject() as DirectoryEntry;
                         if (entry != null)
                         {
+                            var value = GetValueForFieldUpdate(entry.Properties[updateField], ConfigurationManager.AppSettings["AD:UpdateFieldDisableValue"]);
                             entry.Properties[updateField].Clear();
-                            entry.Properties[updateField].Add(GetValueForFieldUpdate(entry.Properties[updateField], ConfigurationManager.AppSettings["AD:UpdateFieldDisableValue"]));
+                            entry.Properties[updateField].Add(value);
                         }
                         else
                         {
@@ -344,6 +346,8 @@ namespace SkillsWorkflow.Services.ADBlocker
 
         private static object GetValueForFieldUpdate(PropertyValueCollection property, string stringValue)
         {
+            if(property.PropertyName == "logonHours")
+                return ConvertHexaStringToByteArray(stringValue);
             if (property.Value == null)
                 return stringValue;
             if (property.Value.GetType() == typeof(byte[]))
