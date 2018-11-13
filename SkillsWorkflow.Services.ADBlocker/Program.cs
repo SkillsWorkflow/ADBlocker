@@ -193,7 +193,7 @@ namespace SkillsWorkflow.Services.ADBlocker
                             if (entry != null)
                             {
                                 entry.Properties[updateField].Clear();
-                                entry.Properties[updateField].Add(ConfigurationManager.AppSettings["AD:UpdateFieldEnableValue"]);
+                                entry.Properties[updateField].Add(GetValueForFieldUpdate(entry.Properties[updateField], ConfigurationManager.AppSettings["AD:UpdateFieldEnableValue"]));
                             }
                             else
                             {
@@ -309,7 +309,7 @@ namespace SkillsWorkflow.Services.ADBlocker
                         if (entry != null)
                         {
                             entry.Properties[updateField].Clear();
-                            entry.Properties[updateField].Add(ConfigurationManager.AppSettings["AD:UpdateFieldDisableValue"]);
+                            entry.Properties[updateField].Add(GetValueForFieldUpdate(entry.Properties[updateField], ConfigurationManager.AppSettings["AD:UpdateFieldDisableValue"]));
                         }
                         else
                         {
@@ -340,6 +340,25 @@ namespace SkillsWorkflow.Services.ADBlocker
         {
             var pk = certificate?.GetPublicKeyString();
             return pk != null && pk.Equals(ConfigurationManager.AppSettings["Skills:SSLPublicKey"]);
+        }
+
+        private static object GetValueForFieldUpdate(PropertyValueCollection property, string stringValue)
+        {
+            if (property.Value == null)
+                return stringValue;
+            if (property.Value.GetType() == typeof(byte[]))
+                return ConvertHexaStringToByteArray(stringValue);
+            return stringValue;
+        }
+
+        private static byte[] ConvertHexaStringToByteArray(string hexString)
+        {
+            var bytes = new byte[hexString.Length / 2];
+            for (var i = 0; i < bytes.Length; i++)
+            {
+                bytes[i] = Convert.ToByte(hexString.Substring(i * 2, 2), 16);
+            }
+            return bytes;
         }
     }
 }
