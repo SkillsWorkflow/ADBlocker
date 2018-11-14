@@ -231,7 +231,7 @@ namespace SkillsWorkflow.Services.ADBlocker
 
         private static BlockedLoginRequestResult ValidateLoginRequest(BlockedLoginRequest blockedLoginRequest)
         {
-            bool valid;
+            bool valid = false;
             
             using (var context = CreatePrincipalContext())
             {
@@ -242,24 +242,52 @@ namespace SkillsWorkflow.Services.ADBlocker
                         Trace.WriteLine($"User {blockedLoginRequest.AdUserName} not found in AD.", "ADBlocker");
                         return new BlockedLoginRequestResult { Id = blockedLoginRequest.Id, RequestResult = false, RequestResultMessage = "AD User not found." };
                     }
-                    
-                    DateTime? accountExpirationDate = userPrincipal.AccountExpirationDate;
 
-                    if (accountExpirationDate.HasValue && accountExpirationDate.Value < DateTime.UtcNow)
+                    string updateField = ConfigurationManager.AppSettings["AD:UpdateField"];
+                    if (string.IsNullOrWhiteSpace(updateField))
                     {
-                        userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(1);
-                        userPrincipal.Save();
-                    }
+                        DateTime? accountExpirationDate = userPrincipal.AccountExpirationDate;
 
-                    Trace.WriteLine($"User {blockedLoginRequest.AdUserName} unblocked", "ADBlocker");
-                    var entries = blockedLoginRequest.AdUserName.Split(new [] {"\\" }, StringSplitOptions.RemoveEmptyEntries);
-                    var user = entries.Length == 2 ? entries[1] : entries[0];
-                    valid = context.ValidateCredentials(user, blockedLoginRequest.Password);
-                    Trace.WriteLine($"UserName: {blockedLoginRequest.AdUserName} ", "ADBlocker");
-                    
-                    userPrincipal.AccountExpirationDate = accountExpirationDate;
-                    userPrincipal.Save();
-                    Trace.WriteLine($"User {blockedLoginRequest.AdUserName} blocked", "ADBlocker");
+                        if (accountExpirationDate.HasValue && accountExpirationDate.Value < DateTime.UtcNow)
+                        {
+                            userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(1);
+                            userPrincipal.Save();
+                        }
+
+                        Trace.WriteLine($"User {blockedLoginRequest.AdUserName} unblocked", "ADBlocker");
+                        var entries = blockedLoginRequest.AdUserName.Split(new[] { "\\" }, StringSplitOptions.RemoveEmptyEntries);
+                        var user = entries.Length == 2 ? entries[1] : entries[0];
+                        valid = context.ValidateCredentials(user, blockedLoginRequest.Password);
+                        Trace.WriteLine($"UserName: {blockedLoginRequest.AdUserName} ", "ADBlocker");
+
+                        userPrincipal.AccountExpirationDate = accountExpirationDate;
+                        userPrincipal.Save();
+                        Trace.WriteLine($"User {blockedLoginRequest.AdUserName} blocked", "ADBlocker");
+                    }
+                    else
+                    {
+                        var entry = userPrincipal.GetUnderlyingObject() as DirectoryEntry;
+                        if (entry != null)
+                        {
+                            var oldValue = entry.Properties[updateField].Value;
+                            var value = GetValueForFieldUpdate(entry.Properties[updateField], ConfigurationManager.AppSettings["AD:UpdateFieldEnableValue"]);
+                            entry.Properties[updateField].Clear();
+                            entry.Properties[updateField].Add(value);
+                            userPrincipal.Save();
+                            Trace.WriteLine($"User {blockedLoginRequest.AdUserName} unblocked", "ADBlocker");
+                            var entries = blockedLoginRequest.AdUserName.Split(new[] { "\\" }, StringSplitOptions.RemoveEmptyEntries);
+                            var user = entries.Length == 2 ? entries[1] : entries[0];
+                            valid = context.ValidateCredentials(user, blockedLoginRequest.Password);
+                            Trace.WriteLine($"UserName: {blockedLoginRequest.AdUserName} ", "ADBlocker");
+                            entry.Properties[updateField].Clear();
+                            entry.Properties[updateField].Add(oldValue);
+                            userPrincipal.Save();
+                            Trace.WriteLine($"User {blockedLoginRequest.AdUserName} blocked", "ADBlocker");
+                        }
+                        else
+                            Trace.WriteLine($"Could not validate user credentials. The update field is invalid or the user entry could not be loaded.", "ADBlocker");
+                    }
+                        
                 }
             }
 
