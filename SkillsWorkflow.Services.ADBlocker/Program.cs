@@ -87,6 +87,7 @@ namespace SkillsWorkflow.Services.ADBlocker
             };
             _client.DefaultRequestHeaders.Add("X-AppId", ConfigurationManager.AppSettings["Skills:AppId"]);
             _client.DefaultRequestHeaders.Add("X-AppSecret", ConfigurationManager.AppSettings["Skills:AppSecret"]);
+            _client.DefaultRequestHeaders.Add("X-AppTenant", ConfigurationManager.AppSettings["Skills:AppTenant"]);
             _client.DefaultRequestHeaders.Accept.Clear();
             _client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         }
@@ -243,6 +244,7 @@ namespace SkillsWorkflow.Services.ADBlocker
                         return new BlockedLoginRequestResult { Id = blockedLoginRequest.Id, RequestResult = false, RequestResultMessage = "AD User not found." };
                     }
 
+                    Trace.WriteLine($"Starting blocked login request validation.", "ADBlocker");
                     string updateField = ConfigurationManager.AppSettings["AD:UpdateField"];
                     if (string.IsNullOrWhiteSpace(updateField))
                     {
@@ -287,7 +289,7 @@ namespace SkillsWorkflow.Services.ADBlocker
                         else
                             Trace.WriteLine($"Could not validate user credentials. The update field is invalid or the user entry could not be loaded.", "ADBlocker");
                     }
-                        
+                    Trace.WriteLine($"Ended blocked login request validation.", "ADBlocker");
                 }
             }
 
