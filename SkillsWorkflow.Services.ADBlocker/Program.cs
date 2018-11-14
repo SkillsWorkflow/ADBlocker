@@ -232,12 +232,7 @@ namespace SkillsWorkflow.Services.ADBlocker
         private static BlockedLoginRequestResult ValidateLoginRequest(BlockedLoginRequest blockedLoginRequest)
         {
             bool valid;
-
-            string updateField = ConfigurationManager.AppSettings["AD:UpdateField"];
-            if(!string.IsNullOrWhiteSpace(updateField))
-                return new BlockedLoginRequestResult { Id = blockedLoginRequest.Id, RequestResult = false,
-                    RequestResultMessage = "An update field is used in ADBlocker preventing credentials from being validated." };
-
+            
             using (var context = CreatePrincipalContext())
             {
                 using (UserPrincipal userPrincipal = UserPrincipal.FindByIdentity(context, blockedLoginRequest.AdUserName))
