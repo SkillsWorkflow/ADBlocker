@@ -13,5 +13,7 @@ namespace SkillsWorkflow.Services.ADBlocker.Models
     {
         public Guid Oid { get; set; }
         public DateTime? AccountExpirationDate { get; set; }
+        public bool Success { get; set; }
+        public string Message { get; set; }
     }
 }
