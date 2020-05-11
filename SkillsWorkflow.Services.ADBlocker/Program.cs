@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Configuration;
-using System.Diagnostics;
 using System.DirectoryServices;
 using System.DirectoryServices.AccountManagement;
 using System.Net.Http;
@@ -10,10 +9,10 @@ using System.Net.Security;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
+using log4net;
 using Mindscape.Raygun4Net;
 using Newtonsoft.Json;
 using SkillsWorkflow.Services.ADBlocker.Models;
-using SkillsWorkflow.Services.ADBlocker.Utils;
 
 namespace SkillsWorkflow.Services.ADBlocker
 {
@@ -22,6 +21,7 @@ namespace SkillsWorkflow.Services.ADBlocker
         private static WebRequestHandler _handler;
         private static HttpClient _client;
         private static readonly RaygunClient RaygunClient = new RaygunClient(ConfigurationManager.AppSettings["Raygun:AppKey"]);
+        private static readonly ILog _logger = LogManager.GetLogger(System.Reflection.MethodBase.GetCurrentMethod().DeclaringType);
 
         private static void Main(string[] args)
         {
@@ -40,8 +40,7 @@ namespace SkillsWorkflow.Services.ADBlocker
 
         private static void ProcessException(Exception ex)
         {
-            Trace.WriteLine("ERROR", "ADBlocker");
-            ex.TraceError();
+            _logger.Error("ERROR", ex);
             RaygunClient.Send(ex);
         }
 
@@ -52,8 +51,7 @@ namespace SkillsWorkflow.Services.ADBlocker
 
         private static async Task RunTaskAsync()
         {
-            Trace.WriteLine("Start task", "ADBlocker");
-            Trace.WriteLine($"Start Time: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}", "ADBlocker");
+            _logger.Info("Start Task");
             try
             {
                 InitializeHttpClient();
@@ -67,10 +65,7 @@ namespace SkillsWorkflow.Services.ADBlocker
             }
             finally
             {
-                Trace.WriteLine($"End Time: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}", "ADBlocker");
-                Trace.WriteLine("End Task", "ADBlocker");
-                Trace.WriteLine("");
-                Trace.Close();
+                _logger.Info("End Task");
                 _client?.Dispose();
                 _handler?.Dispose();
             }
@@ -100,119 +95,106 @@ namespace SkillsWorkflow.Services.ADBlocker
 
         private static async Task RunBlockingTaskAsync()
         {
-            try
-            {
-                Trace.WriteLine($"Started running blocking task: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}",
-                    "ADBlocker");
-                var response = await _client.GetAsync("api/blockedloginrequests/userstoblock");
-                response.EnsureSuccessStatusCode();
-                var responseContent = await response.Content.ReadAsStringAsync();
-                var usersToBlock = JsonConvert.DeserializeObject<List<User>>(responseContent);
-                foreach (var user in usersToBlock)
-                    await BlockUserAsync(user);
-                Trace.WriteLine($"Ended running blocking task: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}",
-                    "ADBlocker");
-            }
-            catch (Exception ex)
-            {
-                ProcessException(ex);
-            }
-            
+            _logger.Info("Started running blocking task");
+            var response = await _client.GetAsync("api/blockedloginrequests/userstoblock");
+            response.EnsureSuccessStatusCode();
+            var responseContent = await response.Content.ReadAsStringAsync();
+            var usersToBlock = JsonConvert.DeserializeObject<List<User>>(responseContent);
+            foreach (var user in usersToBlock)
+                await BlockUserAsync(user);
+            _logger.Info("Ended running blocking task");
         }
 
         private static async Task RunScheduledTaskAsync()
         {
-            Trace.WriteLine($"Started running scheduled task: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}", "ADBlocker");
-
+            _logger.Info("Started running scheduled task");
             await ProcessBlockedLoginRequestsAsync();
             await ProcessUnblockUserRequestsAsync();
-
-            Trace.WriteLine($"Ended running scheduled task: {DateTime.UtcNow.ToString("dd/MM/yyyy HH:mm:ss.fff")}", "ADBlocker");
+            _logger.Info("Ended running scheduled task");
         }
 
         private static async Task ProcessBlockedLoginRequestsAsync()
         {
-            try
-            {
-                var response = await _client.GetAsync("api/blockedloginrequests");
-                response.EnsureSuccessStatusCode();
-                var resp = await response.Content.ReadAsStringAsync();
-                var blockedLoginRequests = JsonConvert.DeserializeObject<List<BlockedLoginRequest>>(resp);
+            var response = await _client.GetAsync("api/blockedloginrequests");
+            response.EnsureSuccessStatusCode();
+            var resp = await response.Content.ReadAsStringAsync();
+            var blockedLoginRequests = JsonConvert.DeserializeObject<List<BlockedLoginRequest>>(resp);
 
-                foreach (var blockedLoginRequest in blockedLoginRequests)
-                    await UpdateBlockedLoginRequestAsync(ValidateLoginRequest(blockedLoginRequest));
-            }
-            catch (Exception ex)
-            {
-                ProcessException(ex);
-            }
+            foreach (var blockedLoginRequest in blockedLoginRequests)
+                await UpdateBlockedLoginRequestAsync(ValidateLoginRequest(blockedLoginRequest));
         }
 
         private static async Task ProcessUnblockUserRequestsAsync()
         {
-            try
-            {
-                var response = await _client.GetAsync("api/unblockuserrequests");
-                response.EnsureSuccessStatusCode();
-                var responseContent = await response.Content.ReadAsStringAsync();
-                var unblockUserRequests = JsonConvert.DeserializeObject<List<UnblockUserRequest>>(responseContent);
-                foreach (var unblockUserRequest in unblockUserRequests)
-                    await ProcessUnblockUserRequestAsync(unblockUserRequest);
-            }
-            catch (Exception ex)
-            {
-                ProcessException(ex);
-            }
+            var response = await _client.GetAsync("api/unblockuserrequests");
+            response.EnsureSuccessStatusCode();
+            var responseContent = await response.Content.ReadAsStringAsync();
+            var unblockUserRequests = JsonConvert.DeserializeObject<List<UnblockUserRequest>>(responseContent);
+            foreach (var unblockUserRequest in unblockUserRequests)
+                await ProcessUnblockUserRequestAsync(unblockUserRequest);
         }
 
         private static async Task ProcessUnblockUserRequestAsync(UnblockUserRequest unblockUserRequest)
         {
             UnblockUserRequestResult result;
-            using (var context = CreatePrincipalContext())
+            try
             {
-                using (UserPrincipal userPrincipal = UserPrincipal.FindByIdentity(context, unblockUserRequest.AdUserName))
+                using (var context = CreatePrincipalContext())
                 {
-                    if (userPrincipal == null)
-                        result = new UnblockUserRequestResult { Id = unblockUserRequest.Id, RequestResult = false, RequestResultMessage = "AD User not found." };
-                    else
+                    using (UserPrincipal userPrincipal = UserPrincipal.FindByIdentity(context, unblockUserRequest.AdUserName))
                     {
-                        string updateField = ConfigurationManager.AppSettings["AD:UpdateField"];
-                        if (string.IsNullOrWhiteSpace(updateField))
-                        {
-                            if (userPrincipal.AccountExpirationDate.HasValue &&
-                                userPrincipal.AccountExpirationDate.Value < DateTime.UtcNow)
-                            {
-                                if (!unblockUserRequest.AccountExpirationDate.HasValue || (unblockUserRequest.AccountExpirationDate.Value > DateTime.UtcNow))
-                                    userPrincipal.AccountExpirationDate = unblockUserRequest.AccountExpirationDate;
-                                else
-                                    userPrincipal.AccountExpirationDate = null;
-                            }
-                        }
+                        if (userPrincipal == null)
+                            result = new UnblockUserRequestResult { Id = unblockUserRequest.Id, RequestResult = false, RequestResultMessage = "AD User not found." };
                         else
                         {
-                            var entry = userPrincipal.GetUnderlyingObject() as DirectoryEntry;
-                            if (entry != null)
+                            string updateField = ConfigurationManager.AppSettings["AD:UpdateField"];
+                            if (string.IsNullOrWhiteSpace(updateField))
                             {
-                                var value = GetValueForFieldUpdate(entry.Properties[updateField], ConfigurationManager.AppSettings["AD:UpdateFieldEnableValue"]);
-                                entry.Properties[updateField].Clear();
-                                entry.Properties[updateField].Add(value);
+                                if (userPrincipal.AccountExpirationDate.HasValue &&
+                                    userPrincipal.AccountExpirationDate.Value < DateTime.UtcNow)
+                                {
+                                    if (!unblockUserRequest.AccountExpirationDate.HasValue || (unblockUserRequest.AccountExpirationDate.Value > DateTime.UtcNow))
+                                        userPrincipal.AccountExpirationDate = unblockUserRequest.AccountExpirationDate;
+                                    else
+                                        userPrincipal.AccountExpirationDate = null;
+                                }
                             }
                             else
                             {
-                                Trace.WriteLine($"Unblocked User {unblockUserRequest.AdUserName} failed. The defined update field is invalid or the user entry could not be loaded.", "ADBlocker");
-                                result = new UnblockUserRequestResult { Id = unblockUserRequest.Id, RequestResult = false,
-                                    RequestResultMessage = "Operation failed. The defined update field is invalid or the user entry could not be loaded." };
-                                await UpdateUnblockRequest(result);
-                                return;
+                                var entry = userPrincipal.GetUnderlyingObject() as DirectoryEntry;
+                                if (entry != null)
+                                {
+                                    var value = GetValueForFieldUpdate(entry.Properties[updateField], ConfigurationManager.AppSettings["AD:UpdateFieldEnableValue"]);
+                                    entry.Properties[updateField].Clear();
+                                    entry.Properties[updateField].Add(value);
+                                }
+                                else
+                                {
+                                    _logger.Warn($"Unblocked User {unblockUserRequest.AdUserName} failed. The defined update field is invalid or the user entry could not be loaded.");
+                                    result = new UnblockUserRequestResult
+                                    {
+                                        Id = unblockUserRequest.Id,
+                                        RequestResult = false,
+                                        RequestResultMessage = "Operation failed. The defined update field is invalid or the user entry could not be loaded."
+                                    };
+                                    await UpdateUnblockRequest(result);
+                                    return;
+                                }
+
                             }
-                                
+
+                            userPrincipal.Save();
+                            result = new UnblockUserRequestResult { Id = unblockUserRequest.Id, RequestResult = true, RequestResultMessage = "" };
+                            _logger.Info($"Unblocked User {unblockUserRequest.AdUserName}");
                         }
-  
-                        userPrincipal.Save();
-                        result = new UnblockUserRequestResult { Id = unblockUserRequest.Id, RequestResult = true, RequestResultMessage = "" };
-                        Trace.WriteLine($"Unblocked User {unblockUserRequest.AdUserName}", "ADBlocker");
                     }
                 }
+
+            }
+            catch(Exception ex)
+            {
+                ProcessException(ex);
+                result = new UnblockUserRequestResult { Id = unblockUserRequest.Id, RequestResult = false, RequestResultMessage = ex.Message };
             }
             await UpdateUnblockRequest(result);
         }
@@ -233,67 +215,75 @@ namespace SkillsWorkflow.Services.ADBlocker
         private static BlockedLoginRequestResult ValidateLoginRequest(BlockedLoginRequest blockedLoginRequest)
         {
             bool valid = false;
-            
-            using (var context = CreatePrincipalContext())
+
+            try
             {
-                using (UserPrincipal userPrincipal = UserPrincipal.FindByIdentity(context, blockedLoginRequest.AdUserName))
+                using (var context = CreatePrincipalContext())
                 {
-                    if (userPrincipal == null)
+                    using (UserPrincipal userPrincipal = UserPrincipal.FindByIdentity(context, blockedLoginRequest.AdUserName))
                     {
-                        Trace.WriteLine($"User {blockedLoginRequest.AdUserName} not found in AD.", "ADBlocker");
-                        return new BlockedLoginRequestResult { Id = blockedLoginRequest.Id, RequestResult = false, RequestResultMessage = "AD User not found." };
-                    }
-
-                    Trace.WriteLine($"Starting blocked login request validation.", "ADBlocker");
-                    string updateField = ConfigurationManager.AppSettings["AD:UpdateField"];
-                    if (string.IsNullOrWhiteSpace(updateField))
-                    {
-                        DateTime? accountExpirationDate = userPrincipal.AccountExpirationDate;
-
-                        if (accountExpirationDate.HasValue && accountExpirationDate.Value < DateTime.UtcNow)
+                        if (userPrincipal == null)
                         {
-                            userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(1);
-                            userPrincipal.Save();
+                            _logger.Warn($"User {blockedLoginRequest.AdUserName} not found in AD.");
+                            return new BlockedLoginRequestResult { Id = blockedLoginRequest.Id, RequestResult = false, RequestResultMessage = "AD User not found." };
                         }
 
-                        Trace.WriteLine($"User {blockedLoginRequest.AdUserName} unblocked", "ADBlocker");
-                        var entries = blockedLoginRequest.AdUserName.Split(new[] { "\\" }, StringSplitOptions.RemoveEmptyEntries);
-                        var user = entries.Length == 2 ? entries[1] : entries[0];
-                        valid = context.ValidateCredentials(user, blockedLoginRequest.Password);
-                        Trace.WriteLine($"UserName: {blockedLoginRequest.AdUserName} ", "ADBlocker");
-
-                        userPrincipal.AccountExpirationDate = accountExpirationDate;
-                        userPrincipal.Save();
-                        Trace.WriteLine($"User {blockedLoginRequest.AdUserName} blocked", "ADBlocker");
-                    }
-                    else
-                    {
-                        var entry = userPrincipal.GetUnderlyingObject() as DirectoryEntry;
-                        if (entry != null)
+                        _logger.Info("Starting blocked login request validation.");
+                        string updateField = ConfigurationManager.AppSettings["AD:UpdateField"];
+                        if (string.IsNullOrWhiteSpace(updateField))
                         {
-                            var oldValue = entry.Properties[updateField].Value;
-                            var value = GetValueForFieldUpdate(entry.Properties[updateField], ConfigurationManager.AppSettings["AD:UpdateFieldEnableValue"]);
-                            entry.Properties[updateField].Clear();
-                            entry.Properties[updateField].Add(value);
-                            userPrincipal.Save();
-                            Trace.WriteLine($"User {blockedLoginRequest.AdUserName} unblocked", "ADBlocker");
+                            DateTime? accountExpirationDate = userPrincipal.AccountExpirationDate;
+
+                            if (accountExpirationDate.HasValue && accountExpirationDate.Value < DateTime.UtcNow)
+                            {
+                                userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(1);
+                                userPrincipal.Save();
+                            }
+
+                            _logger.Info($"User {blockedLoginRequest.AdUserName} unblocked");
                             var entries = blockedLoginRequest.AdUserName.Split(new[] { "\\" }, StringSplitOptions.RemoveEmptyEntries);
                             var user = entries.Length == 2 ? entries[1] : entries[0];
                             valid = context.ValidateCredentials(user, blockedLoginRequest.Password);
-                            Trace.WriteLine($"UserName: {blockedLoginRequest.AdUserName} ", "ADBlocker");
-                            entry.Properties[updateField].Clear();
-                            entry.Properties[updateField].Add(oldValue);
+                            _logger.Info($"UserName: {blockedLoginRequest.AdUserName} ");
+
+                            userPrincipal.AccountExpirationDate = accountExpirationDate;
                             userPrincipal.Save();
-                            Trace.WriteLine($"User {blockedLoginRequest.AdUserName} blocked", "ADBlocker");
+                            _logger.Info($"User {blockedLoginRequest.AdUserName} blocked");
                         }
                         else
-                            Trace.WriteLine($"Could not validate user credentials. The update field is invalid or the user entry could not be loaded.", "ADBlocker");
+                        {
+                            var entry = userPrincipal.GetUnderlyingObject() as DirectoryEntry;
+                            if (entry != null)
+                            {
+                                var oldValue = entry.Properties[updateField].Value;
+                                var value = GetValueForFieldUpdate(entry.Properties[updateField], ConfigurationManager.AppSettings["AD:UpdateFieldEnableValue"]);
+                                entry.Properties[updateField].Clear();
+                                entry.Properties[updateField].Add(value);
+                                userPrincipal.Save();
+                                _logger.Info($"User {blockedLoginRequest.AdUserName} unblocked");
+                                var entries = blockedLoginRequest.AdUserName.Split(new[] { "\\" }, StringSplitOptions.RemoveEmptyEntries);
+                                var user = entries.Length == 2 ? entries[1] : entries[0];
+                                valid = context.ValidateCredentials(user, blockedLoginRequest.Password);
+                                _logger.Info($"UserName: {blockedLoginRequest.AdUserName} ");
+                                entry.Properties[updateField].Clear();
+                                entry.Properties[updateField].Add(oldValue);
+                                userPrincipal.Save();
+                                _logger.Info($"User {blockedLoginRequest.AdUserName} blocked");
+                            }
+                            else
+                                _logger.Warn("Could not validate user credentials. The update field is invalid or the user entry could not be loaded.");
+                        }
+                        _logger.Info("Ended blocked login request validation.");
                     }
-                    Trace.WriteLine($"Ended blocked login request validation.", "ADBlocker");
                 }
-            }
 
-            return new BlockedLoginRequestResult { Id = blockedLoginRequest.Id, RequestResult = valid, RequestResultMessage = valid ? "" : "AD User credentials are invalid." };
+                return new BlockedLoginRequestResult { Id = blockedLoginRequest.Id, RequestResult = valid, RequestResultMessage = valid ? "" : "AD User credentials are invalid." };
+            }
+            catch(Exception ex)
+            {
+                ProcessException(ex);
+                return new BlockedLoginRequestResult { Id = blockedLoginRequest.Id, RequestResult = false, RequestResultMessage = ex.Message };
+            }
         }
 
         private static async Task UpdateBlockedLoginRequestAsync(BlockedLoginRequestResult result)
@@ -305,58 +295,70 @@ namespace SkillsWorkflow.Services.ADBlocker
 
         private static async Task<bool> BlockUserAsync(User user)
         {
-            using (var context = CreatePrincipalContext())
+            try
             {
-                using (UserPrincipal userPrincipal = UserPrincipal.FindByIdentity(context, user.AdUserName))
+                using (var context = CreatePrincipalContext())
                 {
-                    if (userPrincipal == null)
+                    using (UserPrincipal userPrincipal = UserPrincipal.FindByIdentity(context, user.AdUserName))
                     {
-                        Trace.WriteLine($"User {user.AdUserName} not found in AD.", "ADBlocker");
-                        return false;
-                    }
-
-                    DateTime? adLockExpirationDate = null;
-                    string updateField = ConfigurationManager.AppSettings["AD:UpdateField"];
-                    if (string.IsNullOrWhiteSpace(updateField))
-                    {
-                        if (userPrincipal.AccountExpirationDate.HasValue &&
-                        userPrincipal.AccountExpirationDate.Value < DateTime.UtcNow)
+                        if (userPrincipal == null)
                         {
-                            Trace.WriteLine($"User {user.AdUserName} is already blocked and was not processed again.", "ADBlocker");
-                            await UpdateBlockStatus(user, null);
+                            _logger.Warn($"User {user.AdUserName} not found in AD.");
+                            await UpdateBlockStatus(user, null, false, $"User {user.AdUserName} not found in AD.");
                             return false;
                         }
-                        adLockExpirationDate = userPrincipal.AccountExpirationDate;
-                        userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(-1);
-                    }
-                    else
-                    {
-                        var entry = userPrincipal.GetUnderlyingObject() as DirectoryEntry;
-                        if (entry != null)
+
+                        DateTime? adLockExpirationDate = null;
+                        string updateField = ConfigurationManager.AppSettings["AD:UpdateField"];
+                        if (string.IsNullOrWhiteSpace(updateField))
                         {
-                            var value = GetValueForFieldUpdate(entry.Properties[updateField], ConfigurationManager.AppSettings["AD:UpdateFieldDisableValue"]);
-                            entry.Properties[updateField].Clear();
-                            entry.Properties[updateField].Add(value);
+                            if (userPrincipal.AccountExpirationDate.HasValue &&
+                            userPrincipal.AccountExpirationDate.Value < DateTime.UtcNow)
+                            {
+                                _logger.Info($"User {user.AdUserName} is already blocked and was not processed again.");
+                                await UpdateBlockStatus(user, null, true, string.Empty);
+                                return false;
+                            }
+                            adLockExpirationDate = userPrincipal.AccountExpirationDate;
+                            userPrincipal.AccountExpirationDate = DateTime.UtcNow.AddYears(-1);
                         }
                         else
                         {
-                            Trace.WriteLine($"User {user.AdUserName} was not processed. The update field is invalid or the user entry could not be loaded.", "ADBlocker");
-                            return false;
+                            var entry = userPrincipal.GetUnderlyingObject() as DirectoryEntry;
+                            if (entry != null)
+                            {
+                                var value = GetValueForFieldUpdate(entry.Properties[updateField], ConfigurationManager.AppSettings["AD:UpdateFieldDisableValue"]);
+                                entry.Properties[updateField].Clear();
+                                entry.Properties[updateField].Add(value);
+                            }
+                            else
+                            {
+                                _logger.Warn($"User {user.AdUserName} was not processed. The update field is invalid or the user entry could not be loaded.");
+                                await UpdateBlockStatus(user, null, false, $"User {user.AdUserName} was not processed. The update field is invalid or the user entry could not be loaded.");
+                                return false;
+                            }
                         }
-                    }
-                    
-                    userPrincipal.Save();
 
-                    await UpdateBlockStatus(user, adLockExpirationDate);
+                        userPrincipal.Save();
+
+                        await UpdateBlockStatus(user, adLockExpirationDate, true, string.Empty);
+                    }
                 }
+                _logger.Info($"Blocked User {user.AdUserName}");
+                return true;
             }
-            Trace.WriteLine($"Blocked User {user.AdUserName}", "ADBlocker");
-            return true;
+            catch(Exception ex)
+            {
+                _logger.Error($"Error Blocking User: {user.AdUserName}");
+                await UpdateBlockStatus(user, null, false, ex.ToString());
+                ProcessException(ex);
+                return false;
+            }
         }
 
-        private static async Task<bool> UpdateBlockStatus(User user, DateTime? adLockExpirationDate)
+        private static async Task<bool> UpdateBlockStatus(User user, DateTime? adLockExpirationDate, bool success, string message)
         {
-            HttpContent postContent = new StringContent(JsonConvert.SerializeObject(new UserToBlock { Oid = user.Oid, AccountExpirationDate = adLockExpirationDate }), Encoding.UTF8, "application/json");
+            HttpContent postContent = new StringContent(JsonConvert.SerializeObject(new UserToBlock { Oid = user.Oid, AccountExpirationDate = adLockExpirationDate, Success = success, Message = message }), Encoding.UTF8, "application/json");
             var response = await _client.PostAsync("api/blockedloginrequests/block", postContent);
             response.EnsureSuccessStatusCode();
             return true;
